@@ -1,0 +1,9 @@
+Rohan managed a mid-sized hedge fund. His analysts relied heavily on momentum signals and volatility filters. Every model looked impressive during trending markets.
+Then came a sudden liquidity shock. Spreads widened. Slippage increased. Execution costs doubled.
+The models had assumed frictionless markets. While signal accuracy remained high, realized returns dropped dramatically due to transaction costs and market impact. The backtests had ignored real-world execution constraints
+Rohan introduced realistic assumptions:
+Slippage modeling
+Transaction cost adjustments
+Position size limits based on liquidity
+The Sharpe ratio dropped from 2.1 to 1.3.
+But it was honest. He realized that risk doesn’t just live in price movements — it lives in assumptions.
