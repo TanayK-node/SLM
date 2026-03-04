@@ -6,8 +6,18 @@ from app.engine.rag import retrieve, ingest_folder
 from app.engine.sql_engine import ask_database, connect_to_database # NEW IMPORT
 from fastapi import FastAPI, HTTPException, UploadFile, File # NEW IMPORTS
 from app.engine.tabular_engine import ask_spreadsheet, process_file_to_db # NEW IMPORT
+from fastapi.middleware.cors import CORSMiddleware # NEW IMPORT
 
 app = FastAPI()
+
+# NEW: Add CORS middleware to allow your Next.js frontend to talk to FastAPI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, change this to your actual frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class QueryRequest(BaseModel):
     query: str
