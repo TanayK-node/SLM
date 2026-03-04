@@ -14,7 +14,6 @@ def chunk_text(text, chunk_size=500, overlap=100):
     by splitting on double newlines, with a fallback to single newlines.
     """
     chunks = []
-    # Split by double newline to preserve function/class boundaries in scripts
     paragraphs = text.split("\n\n")
     
     current_chunk = ""
@@ -24,7 +23,6 @@ def chunk_text(text, chunk_size=500, overlap=100):
         else:
             if current_chunk:
                 chunks.append(current_chunk.strip())
-            # Handle the overlap
             overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
             current_chunk = overlap_text + para + "\n\n"
             
@@ -33,28 +31,66 @@ def chunk_text(text, chunk_size=500, overlap=100):
         
     return chunks
 
-def load_full_file(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
+def extract_text(file_path: str, filename: str) -> str:
+    """Extract raw text from .txt, .py, .pdf, or .docx files."""
+    ext = os.path.splitext(filename)[1].lower()
+    
+    if ext in (".txt", ".py"):
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    
+    elif ext == ".pdf":
+        from pypdf import PdfReader
+        reader = PdfReader(file_path)
+        pages = [page.extract_text() for page in reader.pages if page.extract_text()]
+        return "\n\n".join(pages)
+    
+    elif ext == ".docx":
+        from docx import Document
+        doc = Document(file_path)
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        return "\n\n".join(paragraphs)
+    
+    return ""
+
+def ingest_file(file_path: str, filename: str):
+    """Ingest a single document and add it incrementally to the RAG index."""
+    global index, documents
+    
+    text = extract_text(file_path, filename)
+    if not text.strip():
+        return
+    
+    raw_chunks = chunk_text(text)
+    labeled_chunks = [f"[Source: {filename}]\n{chunk}" for chunk in raw_chunks]
+    documents.extend(labeled_chunks)
+    
+    embeddings = model.encode(labeled_chunks)
+    embeddings_np = np.array(embeddings)
+    
+    if index is None:
+        dimension = embeddings_np.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+    
+    index.add(embeddings_np)
 
 def ingest_folder(folder_path):
+    """Ingest all supported files in a folder (used for initial seeding)."""
     global index, documents
     
     documents = []
+    supported_exts = (".txt", ".py", ".pdf", ".docx")
     
     for filename in os.listdir(folder_path):
+        if not any(filename.endswith(ext) for ext in supported_exts):
+            continue
         file_path = os.path.join(folder_path, filename)
-        
-        if filename.endswith(".txt") or filename.endswith(".py"):
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read() # Only read ONCE
-                
-                # Use the improved semantic chunker
-                raw_chunks = chunk_text(text)
-                
-                # Inject metadata directly into the text the model will read
-                labeled_chunks = [f"[Source: {filename}]\n{chunk}" for chunk in raw_chunks]
-                documents.extend(labeled_chunks)
+        text = extract_text(file_path, filename)
+        if not text.strip():
+            continue
+        raw_chunks = chunk_text(text)
+        labeled_chunks = [f"[Source: {filename}]\n{chunk}" for chunk in raw_chunks]
+        documents.extend(labeled_chunks)
 
     if documents:
         embeddings = model.encode(documents)

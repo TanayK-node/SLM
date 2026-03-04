@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Send,
   Loader2,
@@ -141,25 +140,23 @@ export function ChatInterface() {
       </header>
 
       {/* Messages */}
-      <ScrollArea className="flex-1">
-        <div ref={scrollRef} className="flex flex-col gap-6 p-6">
-          {messages.length === 0 && !isLoading && <EmptyState />}
+      <div ref={scrollRef} className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+        {messages.length === 0 && !isLoading && <EmptyState />}
 
-          {messages.map((msg) =>
-            msg.role === "user" ? (
-              <UserBubble key={msg.id} content={msg.content} />
-            ) : (
-              <AssistantBubble
-                key={msg.id}
-                content={msg.content}
-                intentUsed={msg.intentUsed}
-              />
-            )
-          )}
+        {messages.map((msg) =>
+          msg.role === "user" ? (
+            <UserBubble key={msg.id} content={msg.content} />
+          ) : (
+            <AssistantBubble
+              key={msg.id}
+              content={msg.content}
+              intentUsed={msg.intentUsed}
+            />
+          )
+        )}
 
-          {isLoading && <TypingIndicator />}
-        </div>
-      </ScrollArea>
+        {isLoading && <TypingIndicator />}
+      </div>
 
       {/* Input Area */}
       <div className="border-t border-border p-4">
@@ -254,7 +251,7 @@ function AssistantBubble({
 
   return (
     <div className="flex justify-start">
-      <div className="flex max-w-[70%] items-start gap-3">
+      <div className="flex max-w-[85%] items-start gap-3">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary">
           <Bot className="size-3.5 text-secondary-foreground" />
         </div>
@@ -267,7 +264,7 @@ function AssistantBubble({
               {config.label}
             </span>
           )}
-          <div className="rounded-2xl rounded-bl-md border border-border bg-card px-4 py-2.5 text-sm text-card-foreground leading-relaxed">
+          <div className="rounded-2xl rounded-bl-md border border-border bg-card px-4 py-2.5 text-sm text-card-foreground leading-relaxed whitespace-pre-wrap break-words">
             {content}
           </div>
         </div>

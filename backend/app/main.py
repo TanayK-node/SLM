@@ -2,7 +2,7 @@ import os
 import shutil
 from pydantic import BaseModel
 from app.engine.model import generate_response
-from app.engine.rag import retrieve, ingest_folder
+from app.engine.rag import retrieve, ingest_folder, ingest_file
 from app.engine.sql_engine import ask_database, connect_to_database # NEW IMPORT
 from fastapi import FastAPI, HTTPException, UploadFile, File # NEW IMPORTS
 from app.engine.tabular_engine import ask_spreadsheet, process_file_to_db # NEW IMPORT
@@ -30,12 +30,12 @@ async def route_query(query: str) -> str:
     """The Routing Agent: Determines which engine to use."""
     routing_prompt = f"""
     You are an intelligent routing agent for an enterprise AI system.
-    Analyze the user's query and output EXACTLY ONE WORD from the following list:
+    Analyze the user's query and output EXACTLY ONE WORD (RAG, SQL, CSV, or CHAT).
     
-    - RAG: If the query asks about specific text documents, stories, or code files.
-    - SQL: If the query asks about live metrics, performance, algorithms, or database records.
-    - CSV: If the query asks to analyze, summarize, or calculate data from an uploaded spreadsheet or CSV.
-    - CHAT: If the query is just casual conversation or brainstorming.
+    - RAG: ONLY if the query explicitly asks to search, summarize, or read an uploaded document, PDF, or knowledge base.
+    - SQL: ONLY if the query asks about live connected database metrics (users, trades, etc.).
+    - CSV: ONLY if the query asks to calculate or analyze an uploaded spreadsheet.
+    - CHAT: Default fallback. Use this for casual conversation, drafting emails, writing code, brainstorming, or general knowledge questions.
 
     User Query: "{query}"
     
@@ -70,6 +70,27 @@ async def upload_file(file: UploadFile = File(...)):
     else:
         raise HTTPException(status_code=400, detail=message)
     
+@app.post("/upload_document")
+async def upload_document(file: UploadFile = File(...)):
+    """Endpoint for users to upload PDF, DOCX, or TXT files for RAG."""
+    allowed_extensions = {".pdf", ".docx", ".txt"}
+    ext = os.path.splitext(file.filename)[1].lower()
+
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Please upload a .pdf, .docx, or .txt file."
+        )
+
+    os.makedirs("data/uploads", exist_ok=True)
+    file_location = f"data/uploads/{file.filename}"
+
+    with open(file_location, "wb+") as file_object:
+        shutil.copyfileobj(file.file, file_object)
+
+    ingest_file(file_location, file.filename)
+    return {"status": "success", "message": f"Document '{file.filename}' ingested into RAG successfully."}
+
 @app.post("/connect_db")
 def connect_db(request: DBConnectRequest):
     """Endpoint for companies to plug in their database via URL."""

@@ -1,0 +1,5 @@
+Meera was proud of her portfolio optimizer. It combined 25 technical indicators, weighted them using historical correlation matrices, and dynamically rebalanced every week. 
+On paper, it was unbeatable. Backtests showed smooth equity curves and minimal volatility. But when she stress-tested the system on out-of-sample data, performance collapsed.
+The culprit was subtle. Her optimization routine selected parameters that performed best over the last 10 years. However, many of those parameters were tuned to rare events — specific volatility spikes and sector rotations that never repeated.
+Her system wasn’t predictive. It was memorizing history. Meera reduced the number of indicators, simplified weighting logic, and introduced cross-validation. The performance dropped slightly in backtests but became far more stable in forward simulations.
+She learned that simplicity often survives reality better than complexity.

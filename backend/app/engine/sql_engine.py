@@ -1,4 +1,5 @@
 import os
+import re # <--- ADD THIS LINE
 from sqlalchemy import create_engine, inspect, text
 from app.engine.model import generate_response
 
@@ -42,68 +43,68 @@ def get_database_schema():
 async def ask_database(user_query: str):
     schema = get_database_schema()
     
-    # IMPROVEMENT 1: Few-Shot Prompting
-    # We give the small model a few examples of how to map tricky English to SQL.
+    # 1. Ask for SQL, but expect it to be chatty
     sql_prompt = f"""
     You are an expert SQL Data Analyst.
-    Your task is to translate the User Question into a highly accurate {db_dialect.upper()} query.
+    Translate the User Question into a highly accurate {db_dialect.upper()} query based on the schema.
     
     Database Schema:
     {schema}
     
-    EXAMPLES:
-    User: "Are any algorithms losing money?"
-    SQL: SELECT algo_name, total_profit FROM algorithm_performance WHERE total_profit < 0;
-    
-    User: "How many algorithms are in each status?"
-    SQL: SELECT status, COUNT(*) FROM algorithm_performance GROUP BY status;
-    
     User Question: {user_query}
     
-    CRITICAL: Output ONLY the raw SQL query. Do not include any markdown formatting like ```sql or explanations. Just the SQL code.
+    CRITICAL INSTRUCTION: You MUST output ONLY the SQL query wrapped in a ```sql block. Do not provide explanations, assumptions, or any other text.
     """
     
     raw_sql = await generate_response(sql_prompt)
-    clean_sql = raw_sql.replace("```sql", "").replace("```", "").strip()
-    print(f"\n🔍 Generated SQL: {clean_sql}")
+    
+    # 2. INTELLIGENT PARSING: Use Regex to extract ONLY the code inside the ```sql block
+    match = re.search(r"```(?:sql)?(.*?)```", raw_sql, re.DOTALL | re.IGNORECASE)
+    if match:
+        clean_sql = match.group(1).strip()
+    else:
+        # Fallback if it didn't use markdown
+        clean_sql = raw_sql.replace("```sql", "").replace("```", "").strip()
+        # Strip out any trailing explanations
+        if "Explanation:" in clean_sql:
+            clean_sql = clean_sql.split("Explanation:")[0].strip()
+            
+    print(f"\n🔍 Cleaned SQL for DB: {clean_sql}")
     
     try:
         if any(forbidden in clean_sql.upper() for forbidden in ["DROP", "DELETE", "UPDATE", "INSERT"]):
             return "Security Alert: Query contains forbidden modification commands."
             
-        # 2. Execute the SQL safely
+        # 3. Execute the strictly cleaned SQL safely
         with db_engine.connect() as connection:
             result = connection.execute(text(clean_sql))
-            
-            # IMPROVEMENT 1: Map column names to the row values
-            # This turns [(2,)] into [{'count(*)': 2}] 
-            # or [('Alice', 'Senior Quant')] into [{'name': 'Alice', 'role': 'Senior Quant'}]
             columns = result.keys()
             formatted_data = [dict(zip(columns, row)) for row in result.fetchall()]
             
         print(f"📊 Formatted DB Rows returned: {formatted_data}")
             
-        # IMPROVEMENT 2: Updated Synthesis Prompt
+        # 4. FIXED SYNTHESIS PROMPT: Force a human-friendly answer ONLY
         synthesis_prompt = f"""
-        You are a highly accurate data reporter.
-        You are an expert SQL Data Analyst.
-        Given the following database schema, write a SQL query for the SQLite database to answer the user's question.
+        You are a helpful, professional Data Analyst communicating with a business user.
         The user asked: "{user_query}"
         
-        The database returned the following exact data:
+        You ran a database query which returned this exact raw data:
         {formatted_data}
         
-        RULES:
-        1. Answer the user's question STRICTLY based on the provided data. 
-        2. Do not hallucinate numbers. Do not guess. 
-        3. If the data shows a single dictionary like {{'COUNT(*)': 2}}, it means the total count is 2.
-        4. Make the answer sound natural and professional.
+        INSTRUCTIONS:
+        1. Provide a direct, human-friendly conversational answer to the user's question using ONLY the data above.
+        2. DO NOT show any SQL code. DO NOT explain how you got the answer. DO NOT make assumptions.
+        3. If the data returns a count, just state the count clearly.
         
         Answer:
         """
         
         final_answer = await generate_response(synthesis_prompt)
         return final_answer
+
+        
+    except Exception as e:
+        return f"I encountered an error running the database query: {str(e)}"
 
         
     except Exception as e:
