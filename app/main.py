@@ -1,13 +1,20 @@
-from fastapi import FastAPI
+import os
+import shutil
 from pydantic import BaseModel
 from app.engine.model import generate_response
 from app.engine.rag import retrieve, ingest_folder
-from app.engine.sql_engine import ask_database # NEW IMPORT
+from app.engine.sql_engine import ask_database, connect_to_database # NEW IMPORT
+from fastapi import FastAPI, HTTPException, UploadFile, File # NEW IMPORTS
+from app.engine.tabular_engine import ask_spreadsheet, process_file_to_db # NEW IMPORT
 
 app = FastAPI()
 
 class QueryRequest(BaseModel):
     query: str
+
+class DBConnectRequest(BaseModel):
+    connection_string: str
+
 
 async def route_query(query: str) -> str:
     """The Routing Agent: Determines which engine to use."""
@@ -17,11 +24,12 @@ async def route_query(query: str) -> str:
     
     - RAG: If the query asks about specific text documents, stories, or code files.
     - SQL: If the query asks about live metrics, performance, algorithms, or database records.
+    - CSV: If the query asks to analyze, summarize, or calculate data from an uploaded spreadsheet or CSV.
     - CHAT: If the query is just casual conversation or brainstorming.
 
     User Query: "{query}"
     
-    Output exactly one word (RAG or SQL or CHAT):
+    Output exactly one word (RAG or SQL or CHAT or CSV):
     """
     # Ask LLaMA for the route
     route = await generate_response(routing_prompt)
@@ -31,7 +39,37 @@ async def route_query(query: str) -> str:
     if "RAG" in route:
         return "RAG"
     if "SQL" in route: return "SQL"
+    if "CSV" in route: return "CSV"
     return "CHAT"
+
+@app.post("/upload_file")
+async def upload_file(file: UploadFile = File(...)):
+    """Endpoint for users to upload CSV or Excel files for analysis."""
+    # 1. Save the uploaded file temporarily to the disk
+    os.makedirs("data/uploads", exist_ok=True)
+    file_location = f"data/uploads/{file.filename}"
+    
+    with open(file_location, "wb+") as file_object:
+        shutil.copyfileobj(file.file, file_object)
+        
+    # 2. Process the file and convert it to a database
+    success, message = process_file_to_db(file_location, file.filename)
+    
+    if success:
+        return {"status": "success", "message": message}
+    else:
+        raise HTTPException(status_code=400, detail=message)
+    
+@app.post("/connect_db")
+def connect_db(request: DBConnectRequest):
+    """Endpoint for companies to plug in their database via URL."""
+    success, message = connect_to_database(request.connection_string)
+    
+    if success:
+        return {"status": "success", "message": message}
+    else:
+        # If the connection fails (bad password, wrong URL), return a 400 Bad Request
+        raise HTTPException(status_code=400, detail=message)
 
 @app.post("/chat")
 async def chat(request: QueryRequest):
@@ -42,6 +80,10 @@ async def chat(request: QueryRequest):
     if intent == "SQL":
         # The Database Engine (Prompt is handled inside sql_engine.py)
         answer = await ask_database(request.query)
+    
+    elif intent == "CSV":
+        # 👉 NEW: The Dedicated Spreadsheet Route
+        answer = await ask_spreadsheet(request.query)
         
     elif intent == "RAG":
         # The Document Engine
@@ -92,3 +134,4 @@ async def chat(request: QueryRequest):
 def ingest():
     ingest_folder("data") 
     return {"status": "Ingestion complete"}
+
