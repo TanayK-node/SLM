@@ -1,0 +1,11 @@
+venv
+.venv
+.env
+__init__.py
+__pycache__
+*.xlsx
+*.csv
+*.log
+*.db
+*.sqlite
+*.pyc
