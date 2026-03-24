@@ -40,7 +40,7 @@ def get_database_schema():
         
     return schema_info
 
-async def ask_database(user_query: str):
+async def ask_database(user_query: str, history_text: str = ""):
     schema = get_database_schema()
     
     # 1. Ask for SQL, but expect it to be chatty
@@ -50,7 +50,8 @@ async def ask_database(user_query: str):
     
     Database Schema:
     {schema}
-    
+    === PREVIOUS CONVERSATION CONTEXT ===
+    {history_text}
     User Question: {user_query}
     
     CRITICAL INSTRUCTION: You MUST output ONLY the SQL query wrapped in a ```sql block. Do not provide explanations, assumptions, or any other text.

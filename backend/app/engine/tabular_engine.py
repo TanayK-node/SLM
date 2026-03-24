@@ -44,7 +44,7 @@ def process_file_to_db(file_path: str, filename: str):
     except Exception as e:
         return False, f"Error processing file: {str(e)}"
     
-async def ask_spreadsheet(user_query: str):
+async def ask_spreadsheet(user_query: str, history_text: str = ""):
     """A specialized SQL engine just for analyzing the uploaded spreadsheet."""
     root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     db_path = os.path.join(root_dir, "temp_spreadsheet.db")
@@ -74,7 +74,8 @@ async def ask_spreadsheet(user_query: str):
     1. Output ONLY the raw SQL query. No markdown.
     2. Use SQLite syntax.
     3. You can use mathematical functions like AVG(), SUM(), MAX(), MIN(), and COUNT().
-    
+    === PREVIOUS CONVERSATION CONTEXT ===
+    {history_text}
     User Question: {user_query}
     """
     

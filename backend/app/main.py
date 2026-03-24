@@ -7,6 +7,7 @@ from app.engine.sql_engine import ask_database, connect_to_database # NEW IMPORT
 from fastapi import FastAPI, HTTPException, UploadFile, File # NEW IMPORTS
 from app.engine.tabular_engine import ask_spreadsheet, process_file_to_db # NEW IMPORT
 from fastapi.middleware.cors import CORSMiddleware # NEW IMPORT
+from typing import List, Optional
 
 app = FastAPI()
 
@@ -19,14 +20,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
 class QueryRequest(BaseModel):
     query: str
+    history: Optional[List[ChatMessage]] = []
 
 class DBConnectRequest(BaseModel):
     connection_string: str
 
+def format_history(history: List[ChatMessage]) -> str:
+    """Converts the JSON history array into readable text for the LLM."""
+    if not history:
+        return "No previous context."
+    return "\n".join([f"{msg.role.upper()}: {msg.content}" for msg in history])
 
-async def route_query(query: str) -> str:
+async def route_query(query: str, history_text: str) -> str:
     """The Routing Agent: Determines which engine to use."""
     routing_prompt = f"""
     You are an intelligent routing agent for an enterprise AI system.
@@ -36,7 +47,8 @@ async def route_query(query: str) -> str:
     - SQL: ONLY if the query asks about live connected database metrics (users, trades, etc.).
     - CSV: ONLY if the query asks to calculate or analyze an uploaded spreadsheet.
     - CHAT: Default fallback. Use this for casual conversation, drafting emails, writing code, brainstorming, or general knowledge questions.
-
+    === PREVIOUS CONVERSATION CONTEXT ===
+    {history_text}
     User Query: "{query}"
     
     Output exactly one word (RAG or SQL or CHAT or CSV):
@@ -104,17 +116,18 @@ def connect_db(request: DBConnectRequest):
 
 @app.post("/chat")
 async def chat(request: QueryRequest):
+    history_text = format_history(request.history)
     # 1. Ask the Routing Agent where to send this query
-    intent = await route_query(request.query)
+    intent = await route_query(request.query, history_text)
     print(f"🚦 Routing Agent selected: {intent}")
     
     if intent == "SQL":
         # The Database Engine (Prompt is handled inside sql_engine.py)
-        answer = await ask_database(request.query)
+        answer = await ask_database(request.query, history_text)
     
     elif intent == "CSV":
         # 👉 NEW: The Dedicated Spreadsheet Route
-        answer = await ask_spreadsheet(request.query)
+        answer = await ask_spreadsheet(request.query, history_text)
         
     elif intent == "RAG":
         # The Document Engine
@@ -133,7 +146,8 @@ async def chat(request: QueryRequest):
 
         Context:
         {context}
-
+        === PREVIOUS CONVERSATION ===
+        {history_text}
         Question:
         {request.query}
         
@@ -149,6 +163,8 @@ async def chat(request: QueryRequest):
         Answer the user's question directly, thoughtfully, and professionally. 
         If they are asking for code, brainstorming, or writing tasks, provide high-quality output.
         
+        === PREVIOUS CONVERSATION ===
+        {history_text}
         Question:
         {request.query}
         
