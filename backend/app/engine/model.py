@@ -11,7 +11,10 @@ async def generate_response(prompt: str):
             json={
                 "model": MODEL_NAME,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
+                "options": {
+                    "num_ctx": 8192 
+                }
             }
         )
         data = response.json()

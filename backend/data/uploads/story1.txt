@@ -1,5 +1,0 @@
-Aarav built his trading system after months of backtesting. It calculated moving averages, volatility bands, and a custom momentum score. The results were impressive: steady gains, low drawdowns, and consistent Sharpe ratios above 1.8.
-But when he deployed it live, something strange happened. The model refused to trade. Every morning, the script ran. It pulled market data, computed indicators, ranked assets, and then… did nothing. No positions were opened.
-After reviewing the logs, Aarav discovered the issue. His strategy required at least 60% of stocks in the universe to be in an uptrend before allowing new trades. During backtesting, that condition was frequently satisfied because the period included strong bull markets.
-But in current conditions, market breadth rarely exceeded 45%. The system wasn’t broken. It was disciplined.
-The lesson was painful but valuable: backtests often hide regime bias. A strategy optimized for bullish markets may remain inactive during neutral or bearish periods. Aarav realized he needed adaptive thresholds instead of fixed ones.
