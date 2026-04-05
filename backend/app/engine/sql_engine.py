@@ -1,7 +1,7 @@
 import os
 import re # <--- ADD THIS LINE
 from sqlalchemy import create_engine, inspect, text
-from app.engine.model import generate_response
+from app.engine.model import generate_response, stream_response
 
 # Global state for the active database connection
 db_engine = None
@@ -74,7 +74,8 @@ async def ask_database(user_query: str, history_text: str = ""):
     
     try:
         if any(forbidden in clean_sql.upper() for forbidden in ["DROP", "DELETE", "UPDATE", "INSERT"]):
-            return "Security Alert: Query contains forbidden modification commands."
+            yield "Security Alert: Query contains forbidden modification commands."
+            return
             
         # 3. Execute the strictly cleaned SQL safely
         with db_engine.connect() as connection:
@@ -100,13 +101,8 @@ async def ask_database(user_query: str, history_text: str = ""):
         Answer:
         """
         
-        final_answer = await generate_response(synthesis_prompt)
-        return final_answer
-
-        
+        async for chunk in stream_response(synthesis_prompt):
+            yield chunk
+            
     except Exception as e:
-        return f"I encountered an error running the database query: {str(e)}"
-
-        
-    except Exception as e:
-        return f"I encountered an error running the database query: {str(e)}"
+        yield f"I encountered an error running the database query: {str(e)}"

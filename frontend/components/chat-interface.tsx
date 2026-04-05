@@ -85,7 +85,16 @@ export function ChatInterface() {
       role: m.role,
       content: m.content,
     }))
-    setMessages((prev) => [...prev, userMsg])
+    
+    const assistantId = crypto.randomUUID()
+    const emptyAssistantMsg: Message = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      intentUsed: "CHAT", // Default, will be updated
+    }
+
+    setMessages((prev) => [...prev, userMsg, emptyAssistantMsg])
     setInput("")
     setIsLoading(true)
 
@@ -98,20 +107,40 @@ export function ChatInterface() {
           history: historyToSend 
         }),
       })
+
       if (!res.ok) throw new Error("Chat request failed")
-      const data = await res.json()
 
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.response,
-        intentUsed: data.intent_used,
+      // Extract the intent from the custom header
+      const intentUsed = res.headers.get("X-Intent-Used") || "CHAT"
+      
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      let firstChunk = true
+
+      if (!reader) throw new Error("No reader available")
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        if (firstChunk) {
+          setIsLoading(false)
+          firstChunk = false
+        }
+
+        const chunk = decoder.decode(value, { stream: true })
+        
+        setMessages((prev) => 
+          prev.map((msg) => 
+            msg.id === assistantId 
+              ? { ...msg, content: msg.content + chunk, intentUsed } 
+              : msg
+          )
+        )
       }
-
-      setMessages((prev) => [...prev, assistantMsg])
-    } catch {
+    } catch (error) {
+      console.error("Streaming error:", error)
       toast.error("Failed to get a response. Please try again.")
-    } finally {
       setIsLoading(false)
     }
   }

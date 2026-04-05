@@ -1,10 +1,11 @@
 import os
 import shutil
 from pydantic import BaseModel
-from app.engine.model import generate_response
+from app.engine.model import generate_response, stream_response # UPDATED
 from app.engine.rag import retrieve, ingest_folder, ingest_file
 from app.engine.sql_engine import ask_database, connect_to_database # NEW IMPORT
 from fastapi import FastAPI, HTTPException, UploadFile, File # NEW IMPORTS
+from fastapi.responses import StreamingResponse # NEW IMPORT
 from app.engine.tabular_engine import ask_spreadsheet, process_file_to_db # NEW IMPORT
 from fastapi.middleware.cors import CORSMiddleware # NEW IMPORT
 from typing import List, Optional
@@ -18,6 +19,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Intent-Used"], # CRITICAL: Allow the browser to read this header
 )
 
 class ChatMessage(BaseModel):
@@ -117,65 +119,67 @@ def connect_db(request: DBConnectRequest):
 @app.post("/chat")
 async def chat(request: QueryRequest):
     history_text = format_history(request.history)
-    # 1. Ask the Routing Agent where to send this query
     intent = await route_query(request.query, history_text)
     print(f"🚦 Routing Agent selected: {intent}")
-    
-    if intent == "SQL":
-        # The Database Engine (Prompt is handled inside sql_engine.py)
-        answer = await ask_database(request.query, history_text)
-    
-    elif intent == "CSV":
-        # 👉 NEW: The Dedicated Spreadsheet Route
-        answer = await ask_spreadsheet(request.query, history_text)
-        
-    elif intent == "RAG":
-        # The Document Engine
-        context_chunks = retrieve(request.query)
-        context = "\n\n---\n\n".join(context_chunks)
-        
-        # RESTORED: The strict anti-hallucination RAG prompt
-        prompt = f"""
-        You are an expert analytical engine evaluating documents, stories, and code.
-        
-        CRITICAL INSTRUCTIONS:
-        1. Answer the question STRICTLY using the provided Context. 
-        2. If the answer is not contained in the Context, you MUST say "I cannot answer this based on the provided documents." Do not invent answers.
-        3. When you pull information from a document, mention the [Source: filename] explicitly.
-        4. Do not mix up characters, variables, or logic between different sources.
 
-        Context:
-        {context}
-        === PREVIOUS CONVERSATION ===
-        {history_text}
-        Question:
-        {request.query}
+    async def response_generator():
+        if intent == "SQL":
+            async for chunk in ask_database(request.query, history_text):
+                yield chunk
         
-        Answer:
-        """
-        answer = await generate_response(prompt)
-        
-    else:
-        # The Brainstorming Engine
-        # RESTORED: The Chat persona prompt
-        prompt = f"""
-        You are a highly intelligent, secure Enterprise AI Assistant. 
-        Answer the user's question directly, thoughtfully, and professionally. 
-        If they are asking for code, brainstorming, or writing tasks, provide high-quality output.
-        
-        === PREVIOUS CONVERSATION ===
-        {history_text}
-        Question:
-        {request.query}
-        
-        Answer:
-        """
-        answer = await generate_response(prompt)
+        elif intent == "RAG":
+            context_chunks = retrieve(request.query)
+            context = "\n\n---\n\n".join(context_chunks)
+            prompt = f"""
+            You are an expert analytical engine evaluating documents, stories, and code.
+            
+            CRITICAL INSTRUCTIONS:
+            1. Answer the question STRICTLY using the provided Context. 
+            2. If the answer is not contained in the Context, you MUST say "I cannot answer this based on the provided documents." Do not invent answers.
+            3. When you pull information from a document, mention the [Source: filename] explicitly.
+            4. Do not mix up characters, variables, or logic between different sources.
 
-    return {
-        "intent_used": intent, 
-        "response": answer
-    }
+            Context:
+            {context}
+            === PREVIOUS CONVERSATION ===
+            {history_text}
+            Question:
+            {request.query}
+            
+            Answer:
+            """
+            async for chunk in stream_response(prompt):
+                yield chunk
+
+        elif intent == "CSV":
+            # For now, CSV still uses non-streaming fallback or you can update tabular_engine too
+            answer = await ask_spreadsheet(request.query, history_text)
+            yield answer
+            
+        else:
+            prompt = f"""
+            You are a highly intelligent, secure Enterprise AI Assistant. 
+            Answer the user's question directly, thoughtfully, and professionally. 
+            If they are asking for code, brainstorming, or writing tasks, provide high-quality output.
+            
+            === PREVIOUS CONVERSATION ===
+            {history_text}
+            Question:
+            {request.query}
+            
+            Answer:
+            """
+            async for chunk in stream_response(prompt):
+                yield chunk
+
+    return StreamingResponse(
+        response_generator(),
+        media_type="text/plain",
+        headers={
+            "X-Intent-Used": intent,
+            "Access-Control-Expose-Headers": "X-Intent-Used"
+        }
+    )
 
 @app.post("/ingest")
 def ingest():
