@@ -55,7 +55,11 @@ function getIntentConfig(intentUsed: string) {
   }
 }
 
-export function ChatInterface() {
+interface ChatInterfaceProps {
+  userRole: string
+}
+
+export function ChatInterface({ userRole }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -104,7 +108,8 @@ export function ChatInterface() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           query: query, 
-          history: historyToSend 
+          history: historyToSend,
+          role: userRole
         }),
       })
 

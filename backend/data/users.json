@@ -1,0 +1,19 @@
+{
+  "users": [
+    {
+      "username": "intern1",
+      "password": "password123",
+      "role": "Standard_User"
+    },
+    {
+      "username": "hr_manager",
+      "password": "password123",
+      "role": "HR_User"
+    },
+    {
+      "username": "cfo",
+      "password": "admin",
+      "role": "Admin"
+    }
+  ]
+}
