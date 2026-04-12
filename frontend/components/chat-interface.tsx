@@ -25,6 +25,11 @@ type EmailDraft = {
   body: string
 }
 
+type ReportDraft = {
+  title: string
+  body: string
+}
+
 const INTENT_CONFIG: Record<string, { label: string; icon: string; className: string }> = {
   sql: {
     label: "SQL Engine",
@@ -45,6 +50,11 @@ const INTENT_CONFIG: Record<string, { label: string; icon: string; className: st
     label: "Chat Engine",
     icon: "🧠",
     className: "border-pink-500/30 bg-pink-500/10 text-pink-400",
+  },
+  web: {
+    label: "Web Engine",
+    icon: "🌐",
+    className: "border-indigo-500/30 bg-indigo-500/10 text-indigo-400",
   },
 }
 
@@ -84,7 +94,26 @@ function parseJsonDraft(rawText: string): EmailDraft | null {
 
   return null
 }
+const parseReportDraft = (content: string): ReportDraft | null => {
+  const match = content.match(/\[REPORT_DRAFT\]([\s\S]*?)\[\/REPORT_DRAFT\]/i)
+  if (!match?.[1]) return null
 
+  try {
+    const parsed = JSON.parse(match[1])
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.title === "string" &&
+      typeof parsed.body === "string"
+    ) {
+      return parsed as ReportDraft
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
 const parseEmailDraft = (content: string): EmailDraft | null => {
   const taggedMatch = content.match(/\[EMAIL_DRAFT\]([\s\S]*?)\[\/EMAIL_DRAFT\]/i)
   if (taggedMatch?.[1]) {
@@ -101,6 +130,7 @@ function getIntentConfig(intentUsed: string) {
   if (key.includes("csv")) return INTENT_CONFIG.csv
   if (key.includes("rag")) return INTENT_CONFIG.rag
   if (key.includes("chat")) return INTENT_CONFIG.chat
+  if (key.includes("web")) return INTENT_CONFIG.web
   return {
     label: intentUsed,
     icon: "✨",
@@ -307,6 +337,7 @@ function EmptyState() {
           { icon: "⚡", label: "SQL Engine" },
           { icon: "📊", label: "CSV Engine" },
           { icon: "📄", label: "RAG Engine" },
+          { icon: "🌐", label: "Web Engine" },
           { icon: "🧠", label: "Chat Engine" },
         ].map((engine) => (
           <span
@@ -347,6 +378,7 @@ function AssistantBubble({
   userRole: string
 }) {
   const config = intentUsed ? getIntentConfig(intentUsed) : null
+  const reportDraft = parseReportDraft(content)
   const emailDraft = parseEmailDraft(content)
 
   return (
@@ -365,7 +397,55 @@ function AssistantBubble({
             </span>
           )}
           
-          {emailDraft ? (
+          {reportDraft ? (
+            <div className="mt-1 w-full rounded-2xl border border-border bg-card p-4 shadow-sm border-t-4 border-t-indigo-500">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="flex items-center gap-2 text-lg font-bold text-foreground">
+                  📊 Generated Report: {reportDraft.title}
+                </h3>
+                <Badge variant="secondary">PDF Draft</Badge>
+              </div>
+
+              <div className="mb-4 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border/50 bg-muted/30 p-4 text-sm italic text-muted-foreground">
+                {reportDraft.body}
+              </div>
+
+              <Button
+                className="w-full sm:w-auto"
+                onClick={async () => {
+                  toast.loading("Generating PDF...", { id: "generate-pdf" })
+                  try {
+                    const res = await fetch("http://localhost:8000/generate-pdf", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        title: reportDraft.title,
+                        content: reportDraft.body,
+                        role: userRole,
+                      }),
+                    })
+
+                    if (!res.ok) throw new Error("Failed to generate PDF.")
+
+                    const blob = await res.blob()
+                    const url = window.URL.createObjectURL(blob)
+                    const a = document.createElement("a")
+                    a.href = url
+                    a.download = `${reportDraft.title.replace(/[\\/:*?"<>|]/g, "_")}.pdf`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                    window.URL.revokeObjectURL(url)
+                    toast.success("Report downloaded!", { id: "generate-pdf" })
+                  } catch {
+                    toast.error("Failed to generate PDF.", { id: "generate-pdf" })
+                  }
+                }}
+              >
+                Download as PDF
+              </Button>
+            </div>
+          ) : emailDraft ? (
             <div className="mt-1 w-full rounded-2xl border border-border bg-card p-4 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
