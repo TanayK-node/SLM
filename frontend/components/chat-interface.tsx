@@ -19,27 +19,80 @@ type Message = {
   intentUsed?: string
 }
 
+type EmailDraft = {
+  to: string
+  subject: string
+  body: string
+}
+
 const INTENT_CONFIG: Record<string, { label: string; icon: string; className: string }> = {
   sql: {
     label: "SQL Engine",
-    icon: "\u26A1",
+    icon: "⚡",
     className: "border-amber-500/30 bg-amber-500/10 text-amber-400",
   },
   csv: {
     label: "CSV Engine",
-    icon: "\uD83D\uDCCA",
+    icon: "📊",
     className: "border-blue-500/30 bg-blue-500/10 text-blue-400",
   },
   rag: {
     label: "RAG Engine",
-    icon: "\uD83D\uDCC4",
+    icon: "📄",
     className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
   },
   chat: {
     label: "Chat Engine",
-    icon: "\uD83E\uDDE0",
+    icon: "🧠",
     className: "border-pink-500/30 bg-pink-500/10 text-pink-400",
   },
+}
+
+const EMAIL_DRAFT_STORAGE_KEY = "saved-email-draft"
+
+function parseJsonDraft(rawText: string): EmailDraft | null {
+  const trimmedText = rawText.trim()
+  const fencedMatch = trimmedText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  const candidateText = fencedMatch?.[1]?.trim() ?? trimmedText
+
+  const tryParse = (text: string) => {
+    try {
+      const parsed = JSON.parse(text)
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.to === "string" &&
+        typeof parsed.subject === "string" &&
+        typeof parsed.body === "string"
+      ) {
+        return parsed as EmailDraft
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  const directParse = tryParse(candidateText)
+  if (directParse) return directParse
+
+  const firstBrace = candidateText.indexOf("{")
+  const lastBrace = candidateText.lastIndexOf("}")
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return tryParse(candidateText.slice(firstBrace, lastBrace + 1))
+  }
+
+  return null
+}
+
+const parseEmailDraft = (content: string): EmailDraft | null => {
+  const taggedMatch = content.match(/\[EMAIL_DRAFT\]([\s\S]*?)\[\/EMAIL_DRAFT\]/i)
+  if (taggedMatch?.[1]) {
+    const parsedDraft = parseJsonDraft(taggedMatch[1])
+    if (parsedDraft) return parsedDraft
+  }
+
+  return parseJsonDraft(content)
 }
 
 function getIntentConfig(intentUsed: string) {
@@ -50,7 +103,7 @@ function getIntentConfig(intentUsed: string) {
   if (key.includes("chat")) return INTENT_CONFIG.chat
   return {
     label: intentUsed,
-    icon: "\u2728",
+    icon: "✨",
     className: "border-primary/30 bg-primary/10 text-primary",
   }
 }
@@ -158,7 +211,7 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
       {/* Header */}
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
         <div className="flex items-center gap-3">
@@ -180,7 +233,10 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
       </header>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+      <div
+        ref={scrollRef}
+        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-y-contain bg-background p-6"
+      >
         {messages.length === 0 && !isLoading && <EmptyState />}
 
         {messages.map((msg) =>
@@ -191,6 +247,7 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
               key={msg.id}
               content={msg.content}
               intentUsed={msg.intentUsed}
+              userRole={userRole} 
             />
           )
         )}
@@ -199,7 +256,7 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
       </div>
 
       {/* Input Area */}
-      <div className="border-t border-border p-4">
+      <div className="border-t border-border bg-background p-4">
         <div className="mx-auto flex max-w-3xl items-end gap-3">
           <div className="relative flex-1">
             <textarea
@@ -247,10 +304,10 @@ function EmptyState() {
       </p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {[
-          { icon: "\u26A1", label: "SQL Engine" },
-          { icon: "\uD83D\uDCCA", label: "CSV Engine" },
-          { icon: "\uD83D\uDCC4", label: "RAG Engine" },
-          { icon: "\uD83E\uDDE0", label: "Chat Engine" },
+          { icon: "⚡", label: "SQL Engine" },
+          { icon: "📊", label: "CSV Engine" },
+          { icon: "📄", label: "RAG Engine" },
+          { icon: "🧠", label: "Chat Engine" },
         ].map((engine) => (
           <span
             key={engine.label}
@@ -283,11 +340,14 @@ function UserBubble({ content }: { content: string }) {
 function AssistantBubble({
   content,
   intentUsed,
+  userRole,
 }: {
   content: string
   intentUsed?: string
+  userRole: string
 }) {
   const config = intentUsed ? getIntentConfig(intentUsed) : null
+  const emailDraft = parseEmailDraft(content)
 
   return (
     <div className="flex justify-start">
@@ -295,7 +355,7 @@ function AssistantBubble({
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary">
           <Bot className="size-3.5 text-secondary-foreground" />
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 w-full">
           {config && (
             <span
               className={`inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${config.className}`}
@@ -304,9 +364,100 @@ function AssistantBubble({
               {config.label}
             </span>
           )}
-          <div className="rounded-2xl rounded-bl-md border border-border bg-card px-4 py-2.5 text-sm text-card-foreground leading-relaxed whitespace-pre-wrap break-words">
-            {content}
-          </div>
+          
+          {emailDraft ? (
+            <div className="mt-1 w-full rounded-2xl border border-border bg-card p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-2 font-semibold text-foreground">
+                    ✉️ Draft Email Ready
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Converted into an email template with save and send actions.
+                  </p>
+                </div>
+                <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  Draft
+                </span>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    To
+                  </span>
+                  <input
+                    value={emailDraft.to}
+                    readOnly
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Subject
+                  </span>
+                  <input
+                    value={emailDraft.subject}
+                    readOnly
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Message
+                  </span>
+                  <textarea
+                    value={emailDraft.body}
+                    readOnly
+                    rows={8}
+                    className="w-full resize-none rounded-xl border border-border bg-muted/40 px-3 py-3 text-sm leading-relaxed text-foreground outline-none"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    localStorage.setItem(EMAIL_DRAFT_STORAGE_KEY, JSON.stringify(emailDraft))
+                    toast.success("Draft saved locally")
+                  }}
+                >
+                  Save Draft
+                </Button>
+
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    toast.loading("Sending email...", { id: "send-email" })
+                    try {
+                      const res = await fetch("http://localhost:8000/send-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ...emailDraft, role: userRole }),
+                      })
+                      if (!res.ok) {
+                        if (res.status === 403) throw new Error("Unauthorized: Standard Users cannot send emails.")
+                        throw new Error("Failed to send email.")
+                      }
+                      toast.success("Email sent successfully!", { id: "send-email" })
+                    } catch (e: any) {
+                      toast.error(e.message || "Failed to send.", { id: "send-email" })
+                    }
+                  }}
+                >
+                  Save & Send
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl rounded-bl-md border border-border bg-card px-4 py-2.5 text-sm text-card-foreground leading-relaxed whitespace-pre-wrap break-words">
+              {content}
+            </div>
+          )}
         </div>
       </div>
     </div>

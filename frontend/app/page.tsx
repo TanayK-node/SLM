@@ -52,9 +52,9 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <DataSidebar />
-        <main className="flex flex-1 flex-col overflow-hidden">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ChatInterface userRole={userRole} />
         </main>
       </div>

@@ -2,7 +2,8 @@ import httpx
 import json
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL_NAME = "llama3.1:8b" # Change to a quantized model if possible (e.g., llama3.1:8b-q4_K_M)
+# MODEL_NAME = "llama3.1:8b" # Change to a quantized model if possible (e.g., llama3.1:8b-q4_K_M)
+MODEL_NAME = "qwen2.5" # Change to a quantized model if possible (e.g., llama3.1:8b-q4_K_M)
 
 async def generate_response(prompt: str):
     # Using an async client prevents the 150s wait from blocking your entire API
