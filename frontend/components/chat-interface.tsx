@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type ChangeEvent } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Send,
+  Plus,
   Loader2,
   Sparkles,
   User,
@@ -146,8 +147,11 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
+  const [lastUploadedAttachment, setLastUploadedAttachment] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -240,6 +244,57 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
     }
   }
 
+  async function handleAttachmentChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const ext = file.name.split(".").pop()?.toLowerCase()
+    const isTabular = ext === "csv" || ext === "xlsx"
+    const isDocument = ext === "pdf" || ext === "docx" || ext === "txt"
+
+    if (!isTabular && !isDocument) {
+      toast.error("Unsupported file type")
+      e.target.value = ""
+      return
+    }
+
+    const endpoint = isTabular ? "http://localhost:8000/upload_file" : "http://localhost:8000/upload_document"
+    const loadingId = "upload-attachment"
+
+    setIsUploadingAttachment(true)
+    toast.loading("Uploading file...", { id: loadingId })
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!res.ok) {
+        let errorMessage = "Failed to upload file"
+        try {
+          const err = await res.json()
+          if (typeof err?.detail === "string") errorMessage = err.detail
+        } catch {
+          // Keep generic message when response is not JSON.
+        }
+        throw new Error(errorMessage)
+      }
+
+      setLastUploadedAttachment(file.name)
+      toast.success("File uploaded successfully", { id: loadingId })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to upload file"
+      toast.error(message, { id: loadingId })
+    } finally {
+      setIsUploadingAttachment(false)
+      e.target.value = ""
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
       {/* Header */}
@@ -287,7 +342,39 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
 
       {/* Input Area */}
       <div className="border-t border-border bg-background p-4">
-        <div className="mx-auto flex max-w-3xl items-end gap-3">
+        <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          {lastUploadedAttachment && (
+            <div className="w-fit rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+              Attached: {lastUploadedAttachment}
+            </div>
+          )}
+
+          <input
+            ref={attachmentInputRef}
+            type="file"
+            accept=".csv,.xlsx,.pdf,.docx,.txt"
+            onChange={handleAttachmentChange}
+            className="hidden"
+            disabled={isUploadingAttachment}
+          />
+
+          <div className="flex items-end gap-3">
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="size-11 shrink-0 rounded-full"
+              disabled={isUploadingAttachment}
+              onClick={() => attachmentInputRef.current?.click()}
+            >
+              {isUploadingAttachment ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              <span className="sr-only">Attach file</span>
+            </Button>
+
           <div className="relative flex-1">
             <textarea
               ref={inputRef}
@@ -313,6 +400,7 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
             )}
             <span className="sr-only">Send message</span>
           </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -329,7 +417,7 @@ function EmptyState() {
         Welcome to AI Copilot
       </h3>
       <p className="mb-6 max-w-md text-center text-sm text-muted-foreground leading-relaxed">
-        Connect a database or upload a file using the sidebar, then ask questions
+        Connect a database or attach a file with the plus button in chat, then ask questions
         about your data in natural language.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-2">
