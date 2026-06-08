@@ -152,6 +152,7 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
+  const socketRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -163,6 +164,15 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
     inputRef.current?.focus()
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.close()
+        socketRef.current = null
+      }
+    }
+  }, [])
+
   async function handleSend() {
     const query = input.trim()
     if (!query || isLoading) return
@@ -172,17 +182,18 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
       role: "user",
       content: query,
     }
+
     const historyToSend = messages.slice(-6).map((m) => ({
       role: m.role,
       content: m.content,
     }))
-    
+
     const assistantId = crypto.randomUUID()
     const emptyAssistantMsg: Message = {
       id: assistantId,
       role: "assistant",
       content: "",
-      intentUsed: "CHAT", // Default, will be updated
+      intentUsed: "CHAT",
     }
 
     setMessages((prev) => [...prev, userMsg, emptyAssistantMsg])
@@ -190,48 +201,95 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
     setIsLoading(true)
 
     try {
-      const res = await fetch("http://localhost:8000/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          query: query, 
-          history: historyToSend,
-          role: userRole
-        }),
-      })
+      if (socketRef.current) {
+        socketRef.current.close()
+        socketRef.current = null
+      }
 
-      if (!res.ok) throw new Error("Chat request failed")
+      const protocol = globalThis.location.protocol === "https:" ? "wss" : "ws"
+      const socket = new WebSocket(`${protocol}://localhost:8000/ws/chat`)
+      socketRef.current = socket
 
-      // Extract the intent from the custom header
-      const intentUsed = res.headers.get("X-Intent-Used") || "CHAT"
-      
-      const reader = res.body?.getReader()
-      const decoder = new TextDecoder()
-      let firstChunk = true
-
-      if (!reader) throw new Error("No reader available")
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        if (firstChunk) {
-          setIsLoading(false)
-          firstChunk = false
-        }
-
-        const chunk = decoder.decode(value, { stream: true })
-        
-        setMessages((prev) => 
-          prev.map((msg) => 
-            msg.id === assistantId 
-              ? { ...msg, content: msg.content + chunk, intentUsed } 
-              : msg
-          )
+      socket.onopen = () => {
+        socket.send(
+          JSON.stringify({
+            query,
+            history: historyToSend,
+            role: userRole,
+          })
         )
       }
+
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data)
+
+          if (payload.type === "connected") {
+            return
+          }
+
+          if (payload.type === "intent") {
+            const intent = payload.intent || "CHAT"
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantId ? { ...msg, intentUsed: intent } : msg
+              )
+            )
+            return
+          }
+
+          if (payload.type === "status") {
+            return
+          }
+
+          if (payload.type === "token") {
+            setIsLoading(false)
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantId
+                  ? { ...msg, content: msg.content + (payload.content || "") }
+                  : msg
+              )
+            )
+            return
+          }
+
+          if (payload.type === "done") {
+            setIsLoading(false)
+            socket.close()
+            if (socketRef.current === socket) {
+              socketRef.current = null
+            }
+            return
+          }
+
+          if (payload.type === "error") {
+            throw new Error(payload.message || "WebSocket request failed")
+          }
+        } catch (error) {
+          console.error("WebSocket message error:", error)
+          toast.error("Failed to process server response.")
+          setIsLoading(false)
+          socket.close()
+          if (socketRef.current === socket) {
+            socketRef.current = null
+          }
+        }
+      }
+
+      socket.onerror = () => {
+        toast.error("Failed to get a response. Please try again.")
+        setIsLoading(false)
+      }
+
+      socket.onclose = () => {
+        if (socketRef.current === socket) {
+          socketRef.current = null
+        }
+        setIsLoading(false)
+      }
     } catch (error) {
-      console.error("Streaming error:", error)
+      console.error("WebSocket error:", error)
       toast.error("Failed to get a response. Please try again.")
       setIsLoading(false)
     }
@@ -460,11 +518,11 @@ function AssistantBubble({
   content,
   intentUsed,
   userRole,
-}: {
+}: Readonly<{
   content: string
   intentUsed?: string
   userRole: string
-}) {
+}>) {
   const config = intentUsed ? getIntentConfig(intentUsed) : null
   const reportDraft = parseReportDraft(content)
   const emailDraft = parseEmailDraft(content)
