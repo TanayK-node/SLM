@@ -307,8 +307,8 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
     if (!file) return
 
     const ext = file.name.split(".").pop()?.toLowerCase()
-    const isTabular = ext === "csv" || ext === "xlsx"
-    const isDocument = ext === "pdf" || ext === "docx" || ext === "txt"
+    const isTabular   = ext === "csv" || ext === "xlsx"
+    const isDocument  = ext === "pdf" || ext === "docx" || ext === "txt"
 
     if (!isTabular && !isDocument) {
       toast.error("Unsupported file type")
@@ -316,9 +316,11 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
       return
     }
 
-    const endpoint = isTabular ? "http://localhost:8000/upload_file" : "http://localhost:8000/upload_document"
-    const loadingId = "upload-attachment"
+    const endpoint = isTabular
+      ? "http://localhost:8000/upload_file"
+      : "http://localhost:8000/upload_document"
 
+    const loadingId = "upload-attachment"
     setIsUploadingAttachment(true)
     toast.loading("Uploading file...", { id: loadingId })
 
@@ -326,24 +328,67 @@ export function ChatInterface({ userRole }: ChatInterfaceProps) {
       const formData = new FormData()
       formData.append("file", file)
 
-      const res = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-      })
+      const res = await fetch(endpoint, { method: "POST", body: formData })
 
       if (!res.ok) {
         let errorMessage = "Failed to upload file"
         try {
           const err = await res.json()
           if (typeof err?.detail === "string") errorMessage = err.detail
-        } catch {
-          // Keep generic message when response is not JSON.
-        }
+        } catch { /* keep generic */ }
         throw new Error(errorMessage)
       }
 
+      const data = await res.json()
       setLastUploadedAttachment(file.name)
-      toast.success("File uploaded successfully", { id: loadingId })
+      toast.dismiss(loadingId)
+
+      // ── If backend says PageIndex is available → ask the user ──────────
+      if (data.pageindex_available) {
+        toast(
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium">📄 {file.name} uploaded</p>
+            <p className="text-xs text-muted-foreground">
+              This looks like a structured document. Enable section-aware search for more precise answers?
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                onClick={async () => {
+                  toast.dismiss()
+                  toast.loading("Building structured index...", { id: "pageindex-build" })
+                  try {
+                    await fetch("http://localhost:8000/enable_pageindex", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ filename: file.name }),
+                    })
+                    toast.success("🌲 Structured search enabled! Building in background.", { id: "pageindex-build" })
+                  } catch {
+                    toast.error("Failed to enable structured search.", { id: "pageindex-build" })
+                  }
+                }}
+              >
+                Yes, use structured search
+              </button>
+              <button
+                className="rounded-md border border-border px-3 py-1 text-xs text-muted-foreground"
+                onClick={() => toast.dismiss()}
+              >
+                No, keep default
+              </button>
+            </div>
+          </div>,
+          {
+            duration: 12000,   // stays open 12s so user can read + decide
+            id: "pageindex-offer",
+          }
+        )
+      } else {
+        // Non-PDF or short doc — simple success toast
+        toast.success(`"${file.name}" uploaded successfully`)
+      }
+
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to upload file"
       toast.error(message, { id: loadingId })
