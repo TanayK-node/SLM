@@ -16,6 +16,7 @@ from fpdf import FPDF
 from fastapi.responses import FileResponse
 import uuid
 import asyncio
+import time
 
 from app.engine.pageindex import (
     build_pageindex,
@@ -311,51 +312,96 @@ def connect_db(request: DBConnectRequest):
 
 @app.post("/chat")
 async def chat(request: QueryRequest):
+    _http_start = time.time()
+
+    def _t():
+        return f"{(time.time() - _http_start) * 1000:.0f}ms"
+
+    print("\n[HTTP] ───────────────────────── NEW QUERY ─────────────────────────")
+
     history_text = format_history(request.history)
-    
-    # Generate a random Polymorphic Shield token
+
     security_token = f"BOUNDARY_{secrets.token_hex(4).upper()}"
-    
+
     intent = await route_query(request.query, history_text, security_token)
-    print(f"🚦 Routing Agent selected: {intent}")
+
+    print(f"[HTTP] t={_t()} → intent: {intent}")
 
     async def response_generator():
+        try:
             # ==========================================
             # PHASE 1: DATA GATHERING
             # ==========================================
             if intent == "SQL":
-                print("⚡ QUERYING DATABASE...")
-                # Note: If ask_database currently streams directly to the user, 
-                # you will eventually want to update it to just return the raw SQL JSON string here
-                # so the Master Synthesizer can format it into a report or email!
-                # For now, we will just stream it directly if it's purely a SQL query.
-                async for chunk in ask_database(request.query, history_text, security_token, request.role):
+                print(f"[HTTP] t={_t()} → status: Querying database")
+
+                first_token = True
+
+                async for chunk in ask_database(
+                    request.query,
+                    history_text,
+                    security_token,
+                    request.role
+                ):
+                    if first_token:
+                        print(f"[HTTP] t={_t()} → FIRST TOKEN")
+                        first_token = False
+
                     yield chunk
-                return  # Exit early since SQL handled its own streaming
 
-            gathered_context = await gather_context(intent, request.query, history_text)
+                print(f"[HTTP] t={_t()} → done")
+                return
 
-            # ==========================================
-            # PHASE 2: MASTER SYNTHESIZER
-            # ==========================================
+            if intent == "RAG":
+                status_msg = "Searching documents"
+            elif intent == "WEB":
+                status_msg = "Searching web"
+            elif intent == "CSV":
+                status_msg = "Analyzing spreadsheet"
+            else:
+                status_msg = "Preparing response"
+
+            print(f"[HTTP] t={_t()} → status: {status_msg}")
+
+            gathered_context = await gather_context(
+                intent,
+                request.query,
+                history_text
+            )
+
+            print(f"[HTTP] t={_t()} → status: Generating response")
+
             master_prompt = build_master_prompt(
                 query=request.query,
                 history_text=history_text,
                 gathered_context=gathered_context,
                 security_token=security_token
             )
-            
+
+            first_token = True
+
             async for chunk in stream_response(master_prompt):
+                if first_token:
+                    print(f"[HTTP] t={_t()} → FIRST TOKEN")
+                    first_token = False
+
                 yield chunk
 
+            print(f"[HTTP] t={_t()} → done")
+
+        except Exception as e:
+            print(f"[HTTP] ERROR: {e}")
+            raise
+
     return StreamingResponse(
-            response_generator(),
-            media_type="text/plain",
-            headers={
-                "X-Intent-Used": intent,
-                "Access-Control-Expose-Headers": "X-Intent-Used"
-            }
-        )
+        response_generator(),
+        media_type="text/plain",
+        headers={
+            "X-Intent-Used": intent,
+            "Access-Control-Expose-Headers": "X-Intent-Used"
+        }
+    )
+
 @app.post("/send-email")
 async def send_email(req: EmailRequest):
     # SECURITY: Check if the user is allowed to send emails!
@@ -405,7 +451,12 @@ def ingest():
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     try:
+        _ws_start = time.time()
+        def _t():
+            return f"{(time.time() - _ws_start) * 1000:.0f}ms"
+
         await websocket.send_json({"type": "connected"})
+        print(f"[WS] t={_t()} → connected")
 
         while True:
             payload = await websocket.receive_json()
@@ -423,28 +474,38 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "message": "Invalid history payload"})
                 continue
 
+            # Reset timer per query
+            _ws_start = time.time()
+            print("\n[WS] ────────────────────────── NEW QUERY ──────────────────────────")
+
             history_text = format_history(history)
             security_token = f"BOUNDARY_{secrets.token_hex(4).upper()}"
             intent = await route_query(query, history_text, security_token)
 
-            print(f"WebSocket Routing Agent selected: {intent}")
+            print(f"[WS] t={_t()} → intent: {intent}")
             await websocket.send_json({"type": "intent", "intent": intent})
 
             if intent == "SQL":
-                await websocket.send_json({"type": "status", "message": "Querying database"})
+                status_msg = "Querying database"
+                await websocket.send_json({"type": "status", "message": status_msg})
+                print(f"[WS] t={_t()} → status: {status_msg}")
                 async for chunk in ask_database(query, history_text, security_token, role):
                     await websocket.send_json({"type": "token", "content": chunk})
                 await websocket.send_json({"type": "done"})
+                print(f"[WS] t={_t()} → done")
                 continue
 
             if intent == "RAG":
-                await websocket.send_json({"type": "status", "message": "Searching documents"})
+                status_msg = "Searching documents"
             elif intent == "WEB":
-                await websocket.send_json({"type": "status", "message": "Searching web"})
+                status_msg = "Searching web"
             elif intent == "CSV":
-                await websocket.send_json({"type": "status", "message": "Analyzing spreadsheet"})
+                status_msg = "Analyzing spreadsheet"
             else:
-                await websocket.send_json({"type": "status", "message": "Preparing response"})
+                status_msg = "Preparing response"
+
+            await websocket.send_json({"type": "status", "message": status_msg})
+            print(f"[WS] t={_t()} → status: {status_msg}")
 
             gathered_context = await gather_context(intent, query, history_text)
 
@@ -456,15 +517,22 @@ async def websocket_chat(websocket: WebSocket):
             )
 
             await websocket.send_json({"type": "status", "message": "Generating response"})
+            print(f"[WS] t={_t()} → status: Generating response")
+
+            first_token = True
             async for chunk in stream_response(master_prompt):
+                if first_token:
+                    print(f"[WS] t={_t()} → FIRST TOKEN")
+                    first_token = False
                 await websocket.send_json({"type": "token", "content": chunk})
 
             await websocket.send_json({"type": "done"})
+            print(f"[WS] t={_t()} → done")
 
     except WebSocketDisconnect:
-        print("Client disconnected")
+        print(f"[WS] t={_t()} → Client disconnected")
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        print(f"[WS] WebSocket error: {e}")
         try:
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
