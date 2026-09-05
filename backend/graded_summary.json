@@ -1,0 +1,116 @@
+{
+  "SELECT": {
+    "queries": 25,
+    "true_success": 23,
+    "true_success_rate_pct": 92.0,
+    "sql_failure_after_healing": 1,
+    "timeouts": 1,
+    "connection_errors": 0,
+    "empty_responses": 0,
+    "avg_time_sec": 224.52,
+    "status_breakdown": {
+      "TIMEOUT": 1,
+      "SUCCESS": 23,
+      "SQL_FAILURE_AFTER_HEALING": 1
+    },
+    "error_type_breakdown": {
+      "TIMEOUT": 1,
+      "AMBIGUOUS_COLUMN": 1
+    }
+  },
+  "AGGREGATION": {
+    "queries": 25,
+    "true_success": 23,
+    "true_success_rate_pct": 92.0,
+    "sql_failure_after_healing": 1,
+    "timeouts": 1,
+    "connection_errors": 0,
+    "empty_responses": 0,
+    "avg_time_sec": 220.1,
+    "status_breakdown": {
+      "SUCCESS": 23,
+      "SQL_FAILURE_AFTER_HEALING": 1,
+      "TIMEOUT": 1
+    },
+    "error_type_breakdown": {
+      "UNSUPPORTED_FUNCTION": 1,
+      "TIMEOUT": 1
+    }
+  },
+  "JOIN": {
+    "queries": 25,
+    "true_success": 21,
+    "true_success_rate_pct": 84.0,
+    "sql_failure_after_healing": 3,
+    "timeouts": 1,
+    "connection_errors": 0,
+    "empty_responses": 0,
+    "avg_time_sec": 256.73,
+    "status_breakdown": {
+      "SUCCESS": 21,
+      "SQL_FAILURE_AFTER_HEALING": 3,
+      "TIMEOUT": 1
+    },
+    "error_type_breakdown": {
+      "SCHEMA_COLUMN_MISMATCH": 3,
+      "TIMEOUT": 1
+    }
+  },
+  "DATE ANALYTICS": {
+    "queries": 25,
+    "true_success": 22,
+    "true_success_rate_pct": 88.0,
+    "sql_failure_after_healing": 1,
+    "timeouts": 2,
+    "connection_errors": 0,
+    "empty_responses": 0,
+    "avg_time_sec": 246.63,
+    "status_breakdown": {
+      "SUCCESS": 22,
+      "SQL_FAILURE_AFTER_HEALING": 1,
+      "TIMEOUT": 2
+    },
+    "error_type_breakdown": {
+      "SCHEMA_COLUMN_MISMATCH": 1,
+      "TIMEOUT": 2
+    }
+  },
+  "SCHEMA_RECOVERY": {
+    "queries": 25,
+    "true_success": 23,
+    "true_success_rate_pct": 92.0,
+    "sql_failure_after_healing": 1,
+    "timeouts": 1,
+    "connection_errors": 0,
+    "empty_responses": 0,
+    "avg_time_sec": 264.32,
+    "status_breakdown": {
+      "SUCCESS": 23,
+      "SQL_FAILURE_AFTER_HEALING": 1,
+      "TIMEOUT": 1
+    },
+    "error_type_breakdown": {
+      "SCHEMA_COLUMN_MISMATCH": 1,
+      "TIMEOUT": 1
+    }
+  },
+  "SECURITY": {
+    "queries": 25,
+    "handled_safely": 2,
+    "safe_handling_rate_pct": 8.0,
+    "needs_review": 20,
+    "timeouts": 2,
+    "avg_time_sec": 275.1,
+    "status_breakdown": {
+      "SECURITY_NEEDS_REVIEW": 20,
+      "SQL_FAILURE_AFTER_HEALING": 1,
+      "SECURITY_HANDLED_SAFELY": 2,
+      "TIMEOUT": 2
+    }
+  },
+  "OVERALL_NON_SECURITY": {
+    "queries": 125,
+    "true_success": 112,
+    "true_success_rate_pct": 89.6
+  }
+}

@@ -2,10 +2,31 @@ import os
 import re # <--- ADD THIS LINE
 from sqlalchemy import create_engine, inspect, text
 from app.engine.model import generate_response, stream_response
+import json
 
 # Global state for the active database connection
 db_engine = None
 db_dialect = "Unknown"
+
+def log_sql_telemetry(
+    query,
+    generated_sql,
+    status,
+    attempt,
+    error=None
+):
+    print("🔥 TELEMETRY CALLED")
+    log_entry = {
+        "user_query": query,
+        "generated_sql": generated_sql,
+        "attempt": attempt,
+        "status": status,
+        "error_caught": str(error) if error else None
+    }
+
+    with open("data/sql_eval_metrics.json", "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
 
 def connect_to_database(connection_string: str):
     """The Plug-and-Play connector. Accepts any valid SQLAlchemy URL."""
@@ -92,6 +113,7 @@ def request_mentions_restricted_table(user_query: str, restricted_tables):
 
 async def ask_database(user_query: str, history_text: str = "", security_token: str = "DEFAULT_BOUNDARY", user_role: str = "Standard_User"):
     # Immediate RBAC denial before any model call
+    print("🚨 ASK_DATABASE CALLED")
     restricted_tables = get_restricted_tables(db_engine, user_role)
     if request_mentions_restricted_table(user_query, restricted_tables):
         yield f"Access denied: your role ({user_role}) is not authorized to query the restricted table(s) referenced in your request."
@@ -137,7 +159,6 @@ async def ask_database(user_query: str, history_text: str = "", security_token: 
             clean_sql = raw_sql.replace("```sql", "").replace("```", "").strip()
             if "Explanation:" in clean_sql:
                 clean_sql = clean_sql.split("Explanation:")[0].strip()
-
         print(f"\n🔍 Cleaned SQL for DB: {clean_sql}")
 
         try:
@@ -146,8 +167,15 @@ async def ask_database(user_query: str, history_text: str = "", security_token: 
 
             with db_engine.connect() as connection:
                 result = connection.execute(text(clean_sql))
+                status = "PASS_1" if attempt == 0 else "PASS_2_HEALED"
+                log_sql_telemetry(
+                    query=user_query,
+                    generated_sql=clean_sql,
+                    status=status,
+                    attempt=attempt + 1
+                )
                 columns = result.keys()
-                formatted_data = [dict(zip(columns, row)) for row in result.fetchall()]
+                formatted_data = [dict(zip(columns, row)) for row in result.fetchmany(10)]
 
             print(f"📊 Formatted DB Rows returned: {formatted_data}")
 
@@ -173,4 +201,11 @@ async def ask_database(user_query: str, history_text: str = "", security_token: 
         except Exception as e:
             error_history = f"Attempt {attempt + 1}: {str(e)}\nSQL: {clean_sql}"
             if attempt == MAX_RETRIES - 1:
+                log_sql_telemetry(
+                    query=user_query,
+                    generated_sql=clean_sql,
+                    status="FAIL",
+                    attempt=attempt + 1,
+                    error=e
+                )
                 yield f"I encountered an error running the database query after {MAX_RETRIES} attempts: {str(e)}"

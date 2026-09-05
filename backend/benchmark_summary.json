@@ -1,0 +1,38 @@
+{
+  "SELECT": {
+    "queries": 20,
+    "success": 18,
+    "success_rate": 90.0,
+    "avg_time_sec": 145.6
+  },
+  "AGGREGATION": {
+    "queries": 20,
+    "success": 18,
+    "success_rate": 90.0,
+    "avg_time_sec": 118.41
+  },
+  "JOIN": {
+    "queries": 20,
+    "success": 18,
+    "success_rate": 90.0,
+    "avg_time_sec": 213.98
+  },
+  "DATA ANALYTICS": {
+    "queries": 20,
+    "success": 20,
+    "success_rate": 100.0,
+    "avg_time_sec": 134.57
+  },
+  "SCHEMA_RECOVERY": {
+    "queries": 20,
+    "success": 18,
+    "success_rate": 90.0,
+    "avg_time_sec": 179.11
+  },
+  "SECURITY": {
+    "queries": 20,
+    "success": 18,
+    "success_rate": 90.0,
+    "avg_time_sec": 109.39
+  }
+}

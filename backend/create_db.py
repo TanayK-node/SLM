@@ -1,75 +1,89 @@
 import sqlite3
-import os
+import random
+from datetime import datetime, timedelta
 
-def create_complex_db():
-    # Ensure we are saving it in the root directory
-    db_path = os.path.join(os.path.dirname(__file__), "company_data.db")
+def create_mock_database():
+    db_name = "data/enterprise.db"
+    print(f"🛠️ Creating mock database at {db_name}...")
     
-    # Delete the old flat database if it exists
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
-    
-    # TABLE 1: Users (The Quants and Analysts)
-    cursor.execute("""
-    CREATE TABLE users (
-        user_id INTEGER PRIMARY KEY,
-        name TEXT,
-        role TEXT
-    )
-    """)
-    
-    # TABLE 2: Algorithms (Linked to Users)
-    cursor.execute("""
-    CREATE TABLE algorithms (
-        algo_id INTEGER PRIMARY KEY,
-        algo_name TEXT,
+
+    # 1. Create Departments Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS departments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL
+    )''')
+
+    # 2. Create Employees Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS employees (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        department_id INTEGER,
+        FOREIGN KEY (department_id) REFERENCES departments (id)
+    )''')
+
+    # 3. Create Users (Customers) Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        state TEXT NOT NULL,
+        signup_date DATE NOT NULL
+    )''')
+
+    # 4. Create Orders Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        employee_id INTEGER,
+        amount REAL,
         status TEXT,
-        creator_id INTEGER,
-        FOREIGN KEY(creator_id) REFERENCES users(user_id)
-    )
-    """)
+        order_date DATE,
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (employee_id) REFERENCES employees (id)
+    )''')
+
+    # --- POPULATE MOCK DATA ---
     
-    # TABLE 3: Trades (Linked to Algorithms)
-    cursor.execute("""
-    CREATE TABLE trades (
-        trade_id INTEGER PRIMARY KEY,
-        algo_id INTEGER,
-        symbol TEXT,
-        trade_type TEXT,
-        profit_loss REAL,
-        FOREIGN KEY(algo_id) REFERENCES algorithms(algo_id)
-    )
-    """)
-    
+    # Insert Departments
+    depts = ['Sales', 'Engineering', 'Marketing', 'HR', 'Support']
+    for d in depts:
+        cursor.execute("INSERT INTO departments (name) VALUES (?)", (d,))
+
+    # Insert Employees
+    employees = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank']
+    for emp in employees:
+        dept_id = random.randint(1, 5)
+        cursor.execute("INSERT INTO employees (name, department_id) VALUES (?, ?)", (emp, dept_id))
+
     # Insert Users
-    cursor.executemany("INSERT INTO users (name, role) VALUES (?, ?)", [
-        ("Alice", "Senior Quant"),
-        ("Bob", "Junior Analyst")
-    ])
-    
-    # Insert Algorithms
-    cursor.executemany("INSERT INTO algorithms (algo_name, status, creator_id) VALUES (?, ?, ?)", [
-        ("Momentum_v1", "Active", 1),       # Alice's bot
-        ("Arb_Bot_v4", "Active", 1),        # Alice's bot
-        ("Mean_Reversion_v2", "Inactive", 2) # Bob's bot
-    ])
-    
-    # Insert Trades (Profits and Losses)
-    cursor.executemany("INSERT INTO trades (algo_id, symbol, trade_type, profit_loss) VALUES (?, ?, ?, ?)", [
-        (1, "AAPL", "BUY", 1500.00),
-        (1, "TSLA", "SELL", -300.50),
-        (2, "BTC", "BUY", 5000.00),
-        (2, "ETH", "BUY", 1200.00),
-        (3, "MSFT", "SELL", -800.00),
-        (3, "GOOGL", "BUY", 200.00)
-    ])
-    
+    states = ['CA', 'NY', 'TX', 'FL', 'WA']
+    base_date = datetime.now() - timedelta(days=60)
+    for i in range(1, 51): # 50 users
+        signup = base_date + timedelta(days=random.randint(0, 60))
+        cursor.execute("INSERT INTO users (username, state, signup_date) VALUES (?, ?, ?)", 
+                       (f"user_{i}", random.choice(states), signup.strftime('%Y-%m-%d')))
+
+    # Insert Orders
+    statuses = ['Completed', 'Pending', 'Failed']
+    for i in range(1, 101): # 100 orders
+        user_id = random.randint(1, 50)
+        emp_id = random.randint(1, 8)
+        amount = round(random.uniform(50.0, 5000.0), 2)
+        status = random.choices(statuses, weights=[0.7, 0.2, 0.1])[0]
+        order_date = base_date + timedelta(days=random.randint(0, 60))
+        
+        cursor.execute('''INSERT INTO orders (user_id, employee_id, amount, status, order_date) 
+                          VALUES (?, ?, ?, ?, ?)''', 
+                       (user_id, emp_id, amount, status, order_date.strftime('%Y-%m-%d')))
+
     conn.commit()
     conn.close()
-    print("✅ Complex relational database 'company_data.db' created successfully.")
+    print("✅ Database created and populated successfully!")
 
 if __name__ == "__main__":
-    create_complex_db()
+    create_mock_database()
